@@ -31,7 +31,7 @@ func (s *CommonContract) Init(APIstub shim.ChaincodeStubInterface) sc.Response {
 	if function == "init" {
 		return s.create(APIstub, args);
 	}
-	return shim.Success([]byte("Chaincode say 'hi' to you"))
+	return shim.Success([]byte("Chaincode say 'hi' to you haha"))
 }
 
 /*
@@ -351,7 +351,16 @@ func (s *CommonContract) create(APIstub shim.ChaincodeStubInterface, args []stri
 	if err != nil {
 		return shim.Error("Can not create value")
 	}
-
+	tableType := "table~type"
+	tableKey ,err:= APIstub.CreateCompositeKey(tableType,[]string{class})
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+	table ,err :=APIstub.GetState(tableKey)
+	if table == nil || len(table) < 1 {
+		tableString := "{\"tableName\":\""+class+"\",\"type\":\""+tableType+"\"}"
+		APIstub.PutState(tableKey,[]byte(tableString))
+	}
 	return shim.Success(valueAsBytes)
 }
 
