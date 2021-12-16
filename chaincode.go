@@ -10,12 +10,16 @@ package main
  */
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"github.com/hyperledger/fabric-chaincode-go/shim"
 	sc "github.com/hyperledger/fabric-protos-go/peer"
 	"strconv"
 	"time"
+)
 
+const (
+	typeAddSuffix = "_combination@~type"
 )
 
 // CommonContract Define the Common Contract structure, it stores the structure of tracing objects.
@@ -61,6 +65,8 @@ func (s *CommonContract) Invoke(APIstub shim.ChaincodeStubInterface) sc.Response
 		return s.exists(APIstub, args)
 	} else if function == "history" {
 		return s.history(APIstub, args)
+	} else if function == "queryChaincode" {
+		return s.queryChaincode(APIstub)
 	}
 	return shim.Error("Unsupport function " + function)
 }
@@ -277,10 +283,12 @@ func (s *CommonContract) delete(APIstub shim.ChaincodeStubInterface, args []stri
 
 	objectType := "type~key"
 	compositeKey, err := APIstub.CreateCompositeKey(objectType, []string{class, key})
+	addKey,err := APIstub.CreateCompositeKey(objectType, []string{class + typeAddSuffix, key})
 	if err != nil {
 		return shim.Error(err.Error())
 	}
 	err = APIstub.DelState(compositeKey)
+	APIstub.DelState(addKey)
 	if err != nil {
 		return shim.Error(err.Error())
 	}
@@ -344,9 +352,27 @@ func (s *CommonContract) create(APIstub shim.ChaincodeStubInterface, args []stri
 	if err != nil {
 		return shim.Error(err.Error())
 	}
-
 	valueAsBytes := []byte(args[2])
+	addKey,err := APIstub.CreateCompositeKey(objectType, []string{class + typeAddSuffix, key})
+	stringState ,err := APIstub.GetState(addKey)
+	addMap :=make(map[string]interface{})
+	json.Unmarshal(valueAsBytes,&addMap)
+	addMap["type"] = class + typeAddSuffix
+	newValue,err := json.Marshal(addMap)
+	if stringState != nil {
+		oldMap :=make(map[string]interface{})
+		newMap :=make(map[string]interface{})
+		json.Unmarshal(stringState,&oldMap)
+        json.Unmarshal(valueAsBytes,&newMap)
+		for k, v := range newMap {
+			oldMap[k]=v
+		}
+		oldMap["type"] = class + typeAddSuffix
+		newValue,err = json.Marshal(oldMap)
+	}
 
+	APIstub.DelState(addKey)
+	APIstub.PutState(addKey,newValue)
 	err = APIstub.PutState(compositeKey, valueAsBytes)
 	if err != nil {
 		return shim.Error("Can not create value")
@@ -377,15 +403,36 @@ func (s *CommonContract) update(APIstub shim.ChaincodeStubInterface, args []stri
 	if err != nil {
 		return shim.Error(err.Error())
 	}
-
+	valueAsBytes := []byte(args[2])
+	addKey,err := APIstub.CreateCompositeKey(objectType, []string{class + typeAddSuffix, key})
+	stringState ,err := APIstub.GetState(addKey)
+	addMap :=make(map[string]interface{})
+	json.Unmarshal(valueAsBytes,&addMap)
+	addMap["type"] = class + typeAddSuffix
+	newValue,err := json.Marshal(addMap)
+	if stringState != nil {
+		oldMap :=make(map[string]interface{})
+		newMap :=make(map[string]interface{})
+		json.Unmarshal(stringState,&oldMap)
+		json.Unmarshal(valueAsBytes,&newMap)
+		for k, v := range newMap {
+			oldMap[k]=v
+		}
+		oldMap["type"] = class + typeAddSuffix
+		newValue,err = json.Marshal(oldMap)
+	}
+	APIstub.DelState(addKey)
 	err = APIstub.DelState(compositeKey)
 	if err != nil {
 		return shim.Error("Can not replace the old value")
 	}
+	if valueAsBytes == nil{
+		return shim.Error("Can not update the value")
+	}
 
-	valueAsBytes := []byte(args[2])
 
 	err = APIstub.PutState(compositeKey, valueAsBytes)
+	APIstub.PutState(addKey, newValue)
 	if err != nil {
 		return shim.Error("Can not update the value")
 	}
@@ -414,9 +461,12 @@ func (s *CommonContract) get(APIstub shim.ChaincodeStubInterface, args []string)
 	return shim.Success(valueAsBytes)
 }
 
+func (s *CommonContract) queryChaincode(APIstub shim.ChaincodeStubInterface) sc.Response {
+	return shim.Success([]byte("commonChaincode"))
+}
+
 // The main function is only relevant in unit test mode. Only included here for completeness.
 func main() {
-
 	// Create a new Common Contract
 	err := shim.Start(new(CommonContract))
 	if err != nil {
